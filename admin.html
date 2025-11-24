@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Administration - Mémorisation</title>
+    <title>Administration - Mémorisation V3</title>
     <link rel="stylesheet" href="style.css">
 
     <!-- Firebase SDKs -->
@@ -19,48 +19,14 @@
 <body>
 
     <div class="admin-container">
-        <h1>Gestion des Questions</h1>
-
-        <!-- Section Ajout Manuel -->
-        <div class="content-card" style="width: 100%; box-sizing: border-box; margin-bottom: 2rem;">
-            <h2>Ajouter une fiche</h2>
-            <form id="add-form">
-                <div class="form-group">
-                    <label for="question">Question</label>
-                    <input type="text" id="question" required placeholder="Ex: Quelle est la capitale de l'Allemagne ?">
-                </div>
-
-                <div class="form-group">
-                    <label for="answer">Réponse</label>
-                    <input type="text" id="answer" required placeholder="Ex: Berlin">
-                </div>
-
-                <div class="form-group">
-                    <label for="image">Image (optionnel)</label>
-                    <input type="file" id="image" accept="image/*">
-
-                    <!-- Recherche Pixabay -->
-                    <div style="margin-top: 1rem; padding: 1rem; background: #f0f0f0; border-radius: 5px;">
-                        <label style="font-size: 0.9rem;">Ou chercher sur Pixabay :</label>
-                        <div style="display: flex; gap: 10px;">
-                            <input type="text" id="pixabay-search" placeholder="Ex: Chien, Berlin..." style="flex: 1;">
-                            <button type="button" id="pixabay-btn" style="padding: 0.5rem 1rem;">Chercher</button>
-                        </div>
-                        <div id="pixabay-results"
-                            style="display: flex; gap: 10px; overflow-x: auto; margin-top: 10px; padding-bottom: 5px;">
-                        </div>
-                        <input type="hidden" id="selected-pixabay-url">
-                        <div id="selected-preview"
-                            style="margin-top: 10px; font-size: 0.9rem; color: green; display: none;">Image sélectionnée
-                            !</div>
-                    </div>
-                </div>
-
-                <button type="submit" id="submit-btn">Ajouter</button>
-            </form>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h1>Gestion des Questions</h1>
+            <a href="index.html" target="_blank"
+                style="text-decoration: none; background: var(--secondary-color); color: white; padding: 0.5rem 1rem; border-radius: 5px;">Voir
+                le Diaporama</a>
         </div>
 
-        <!-- Section Import Excel -->
+        <!-- Section Import Excel (Seul moyen d'ajout) -->
         <div class="content-card"
             style="width: 100%; box-sizing: border-box; margin-bottom: 2rem; border-top: 4px solid var(--secondary-color);">
             <h2>Import en masse (Excel)</h2>
@@ -68,7 +34,7 @@
                 ici.</p>
             <form id="import-form">
                 <div class="form-group">
-                    <textarea id="import-text" rows="5"
+                    <textarea id="import-text" rows="3"
                         placeholder="Question 1	Réponse 1&#10;Question 2	Réponse 2"></textarea>
                 </div>
                 <button type="submit" id="import-btn" style="background-color: var(--secondary-color);">Importer la
@@ -77,14 +43,29 @@
         </div>
 
         <div class="questions-list" id="questions-list">
-            <!-- Les questions s'afficheront ici -->
+            <!-- Les questions s'afficheront ici en grille -->
             <p>Chargement des questions...</p>
+        </div>
+    </div>
+
+    <!-- Modale Pixabay -->
+    <div id="pixabay-modal">
+        <div id="pixabay-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h3 style="margin: 0;">Choisir une image</h3>
+                <button onclick="closePixabayModal()" style="background: #e74c3c; padding: 0.5rem;">Fermer</button>
+            </div>
+            <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
+                <input type="text" id="pixabay-search-input" placeholder="Recherche..." style="flex: 1;">
+                <button id="pixabay-search-btn">Chercher</button>
+            </div>
+            <div id="pixabay-grid"></div>
         </div>
     </div>
 
     <!-- Modale de Prévisualisation -->
     <div id="preview-modal"
-        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center;">
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 3000; justify-content: center; align-items: center;">
         <div
             style="background: white; width: 90%; height: 90%; position: relative; display: flex; flex-direction: column;">
             <button onclick="closePreview()"
@@ -94,18 +75,17 @@
     </div>
 
     <script>
-        const form = document.getElementById('add-form');
         const importForm = document.getElementById('import-form');
         const questionsList = document.getElementById('questions-list');
-        const submitBtn = document.getElementById('submit-btn');
         const importBtn = document.getElementById('import-btn');
 
         // Pixabay Elements
-        const pixabaySearch = document.getElementById('pixabay-search');
-        const pixabayBtn = document.getElementById('pixabay-btn');
-        const pixabayResults = document.getElementById('pixabay-results');
-        const selectedPixabayUrl = document.getElementById('selected-pixabay-url');
-        const selectedPreview = document.getElementById('selected-preview');
+        const pixabayModal = document.getElementById('pixabay-modal');
+        const pixabayGrid = document.getElementById('pixabay-grid');
+        const pixabaySearchInput = document.getElementById('pixabay-search-input');
+        const pixabaySearchBtn = document.getElementById('pixabay-search-btn');
+
+        let currentEditingDocId = null; // ID de la question en cours d'édition d'image
 
         // Preview Elements
         const previewModal = document.getElementById('preview-modal');
@@ -119,109 +99,6 @@
             });
             if (snapshot.empty) {
                 questionsList.innerHTML = '<p>Aucune question pour le moment.</p>';
-            }
-        });
-
-        // Recherche Pixabay
-        pixabayBtn.addEventListener('click', async () => {
-            const query = pixabaySearch.value;
-            if (!query || query.length < 3) return alert("Entrez au moins 3 caractères");
-
-            if (pixabayApiKey === "39838048-edeef51c8fd008798b4ecbe51") {
-                return alert("Veuillez configurer la clé API Pixabay dans firebase-config.js");
-            }
-
-            pixabayBtn.textContent = "...";
-            pixabayResults.innerHTML = '';
-
-            try {
-                const response = await fetch(`https://pixabay.com/api/?key=${pixabayApiKey}&q=${encodeURIComponent(query)}&lang=fr&image_type=photo&per_page=5`);
-                const data = await response.json();
-
-                if (data.hits.length > 0) {
-                    data.hits.forEach(hit => {
-                        const img = document.createElement('img');
-                        img.src = hit.previewURL;
-                        img.style.height = "80px";
-                        img.style.cursor = "pointer";
-                        img.style.border = "2px solid transparent";
-                        img.style.borderRadius = "4px";
-
-                        img.onclick = () => {
-                            // Sélectionner l'image
-                            document.querySelectorAll('#pixabay-results img').forEach(i => i.style.border = "2px solid transparent");
-                            img.style.border = "2px solid var(--primary-color)";
-                            selectedPixabayUrl.value = hit.webformatURL; // URL de meilleure qualité
-                            selectedPreview.style.display = 'block';
-                            selectedPreview.textContent = "Image sélectionnée (sera téléchargée à l'ajout)";
-                        };
-
-                        pixabayResults.appendChild(img);
-                    });
-                } else {
-                    pixabayResults.textContent = "Aucun résultat.";
-                }
-            } catch (e) {
-                console.error(e);
-                alert("Erreur Pixabay");
-            } finally {
-                pixabayBtn.textContent = "Chercher";
-            }
-        });
-
-        // Ajouter une question (Manuel)
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            submitBtn.disabled = true;
-            submitBtn.textContent = "Ajout en cours...";
-
-            const question = document.getElementById('question').value;
-            const answer = document.getElementById('answer').value;
-            const imageFile = document.getElementById('image').files[0];
-            const pixabayUrl = selectedPixabayUrl.value;
-
-            let imageUrl = null;
-
-            try {
-                // Priorité à l'upload fichier, sinon Pixabay
-                if (imageFile) {
-                    const storageRef = storage.ref('images/' + new Date().getTime() + '_' + imageFile.name);
-                    await storageRef.put(imageFile);
-                    imageUrl = await storageRef.getDownloadURL();
-                } else if (pixabayUrl) {
-                    // Pour Pixabay, on télécharge l'image puis on l'upload sur Firebase pour la pérennité
-                    // Note: Fetch d'une URL externe peut être bloqué par CORS. 
-                    // Si CORS bloque, on enregistre directement l'URL Pixabay (moins robuste mais fonctionne).
-                    try {
-                        const response = await fetch(pixabayUrl);
-                        const blob = await response.blob();
-                        const storageRef = storage.ref('images/' + new Date().getTime() + '_pixabay.jpg');
-                        await storageRef.put(blob);
-                        imageUrl = await storageRef.getDownloadURL();
-                    } catch (corsError) {
-                        console.warn("CORS bloqué pour téléchargement image, utilisation URL directe", corsError);
-                        imageUrl = pixabayUrl;
-                    }
-                }
-
-                await db.collection("questions").add({
-                    question: question,
-                    answer: answer,
-                    imageUrl: imageUrl,
-                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-                });
-
-                form.reset();
-                pixabayResults.innerHTML = '';
-                selectedPixabayUrl.value = '';
-                selectedPreview.style.display = 'none';
-                alert("Question ajoutée avec succès !");
-            } catch (error) {
-                console.error("Erreur lors de l'ajout:", error);
-                alert("Erreur: " + error.message);
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = "Ajouter";
             }
         });
 
@@ -241,7 +118,6 @@
                 const batch = db.batch();
 
                 for (let line of lines) {
-                    // Séparer par tabulation (Excel)
                     const parts = line.split('\t');
                     if (parts.length >= 2) {
                         const q = parts[0].trim();
@@ -262,7 +138,8 @@
 
                 await batch.commit();
                 document.getElementById('import-text').value = '';
-                alert(`${count} questions importées avec succès !`);
+                // Pas d'alerte bloquante, juste un log ou petit toast idéalement, mais ici on reste simple
+                console.log(`${count} questions importées.`);
 
             } catch (error) {
                 console.error("Erreur import:", error);
@@ -273,38 +150,187 @@
             }
         });
 
-        // Afficher une question dans la liste
+        // Afficher une question (Carte V3)
         function renderQuestion(id, data) {
             const div = document.createElement('div');
             div.className = 'question-item';
+            div.id = `item-${id}`;
 
-            let imageHtml = '';
+            // Image Placeholder Logic
+            let imgContent = `<span>Cliquez pour ajouter une image<br>(Pixabay)</span>`;
             if (data.imageUrl) {
-                imageHtml = `<img src="${data.imageUrl}" alt="Image question">`;
+                imgContent = `<img src="${data.imageUrl}" alt="Image">`;
             }
 
-            // Echapper les guillemets pour le onclick
+            // Echapper pour JS
             const safeQuestion = data.question.replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const safeAnswer = data.answer.replace(/'/g, "\\'").replace(/"/g, '&quot;');
             const safeImage = data.imageUrl ? data.imageUrl : '';
 
             div.innerHTML = `
-                ${imageHtml}
-                <div class="item-content">
-                    <strong>Q: ${data.question}</strong><br>
-                    <span style="color: var(--primary-color)">R: ${data.answer}</span>
+                <div class="img-placeholder" onclick="openPixabayFor('${id}', '${safeQuestion}')">
+                    ${imgContent}
                 </div>
-                <div style="display: flex; gap: 5px;">
-                    <button onclick="openPreview('${safeQuestion}', '${safeAnswer}', '${safeImage}')" style="padding: 0.5rem; background-color: var(--secondary-color);">Aperçu</button>
+                
+                <div class="item-content" id="content-${id}">
+                    <div class="q-val" style="font-weight:bold; margin-bottom:0.5rem;">${data.question}</div>
+                    <div class="a-val" style="color:var(--primary-color);">${data.answer}</div>
+                </div>
+
+                <div class="item-actions">
+                    <button class="edit-btn" onclick="toggleEdit('${id}')">Modifier</button>
+                    <button onclick="openPreview('${safeQuestion}', '${safeAnswer}', '${safeImage}')" style="background-color: var(--secondary-color);">Aperçu</button>
                     <button class="delete-btn" onclick="deleteQuestion('${id}', '${data.imageUrl || ''}')">Supprimer</button>
                 </div>
             `;
             questionsList.appendChild(div);
         }
 
-        // Prévisualisation
+        // --- Gestion Pixabay ---
+
+        window.openPixabayFor = (id, initialQuery) => {
+            currentEditingDocId = id;
+            pixabayModal.style.display = 'flex';
+            pixabaySearchInput.value = initialQuery; // Pré-remplir avec la question
+            searchPixabay(initialQuery); // Lancer la recherche auto
+        };
+
+        window.closePixabayModal = () => {
+            pixabayModal.style.display = 'none';
+            currentEditingDocId = null;
+        };
+
+        pixabaySearchBtn.addEventListener('click', () => {
+            searchPixabay(pixabaySearchInput.value);
+        });
+
+        async function searchPixabay(query) {
+            if (!query) return;
+            pixabayGrid.innerHTML = '<p style="text-align:center; width:100%;">Chargement...</p>';
+
+            // Nettoyage basique de la requête (enlever les ? et mots trop courts si phrase longue)
+            // Pour l'instant on envoie brut, Pixabay gère assez bien.
+
+            try {
+                // Utilisation de la clé définie dans firebase-config.js
+                if (typeof pixabayApiKey === 'undefined' || pixabayApiKey === "VOTRE_CLE_PIXABAY") {
+                    pixabayGrid.innerHTML = '<p style="color:red;">Clé API Pixabay manquante dans firebase-config.js</p>';
+                    return;
+                }
+
+                const response = await fetch(`https://pixabay.com/api/?key=${pixabayApiKey}&q=${encodeURIComponent(query)}&lang=fr&image_type=photo&per_page=20`);
+                const data = await response.json();
+
+                pixabayGrid.innerHTML = '';
+                if (data.hits.length > 0) {
+                    data.hits.forEach(hit => {
+                        const img = document.createElement('img');
+                        img.src = hit.webformatURL; // On affiche directement une bonne qualité
+                        img.onclick = () => selectImage(hit.webformatURL);
+                        pixabayGrid.appendChild(img);
+                    });
+                } else {
+                    pixabayGrid.innerHTML = '<p>Aucune image trouvée.</p>';
+                }
+            } catch (e) {
+                console.error(e);
+                pixabayGrid.innerHTML = '<p>Erreur lors de la recherche.</p>';
+            }
+        }
+
+        async function selectImage(url) {
+            if (!currentEditingDocId) return;
+
+            // Feedback visuel
+            const placeholder = document.querySelector(`#item-${currentEditingDocId} .img-placeholder`);
+            if (placeholder) placeholder.innerHTML = '<span>Sauvegarde...</span>';
+
+            closePixabayModal();
+
+            try {
+                // On met à jour directement l'URL dans Firestore.
+                // Note: Idéalement on téléchargerait l'image pour la mettre dans Storage, 
+                // mais pour la V3 rapide et fluide, on utilise l'URL Pixabay (Hotlinking autorisé par Pixabay).
+                // Si l'utilisateur veut vraiment uploader, on pourrait remettre la logique de fetch blob -> storage.
+                // Pour la rapidité demandée ("cliquer sur une image pour la choisir"), le lien direct est le plus performant.
+
+                await db.collection("questions").doc(currentEditingDocId).update({
+                    imageUrl: url
+                });
+
+            } catch (error) {
+                console.error("Erreur update image:", error);
+                alert("Erreur lors de la sauvegarde de l'image.");
+            }
+        }
+
+        // --- Gestion Édition ---
+
+        window.toggleEdit = (id) => {
+            const contentDiv = document.getElementById(`content-${id}`);
+            const isEditing = contentDiv.classList.contains('editing');
+
+            if (!isEditing) {
+                // Passer en mode édition
+                const qVal = contentDiv.querySelector('.q-val').textContent;
+                const aVal = contentDiv.querySelector('.a-val').textContent;
+
+                contentDiv.innerHTML = `
+                    <input type="text" class="edit-q" value="${qVal.replace(/"/g, '&quot;')}" style="margin-bottom:0.5rem;">
+                    <input type="text" class="edit-a" value="${aVal.replace(/"/g, '&quot;')}">
+                    <button class="save-btn" onclick="saveEdit('${id}')" style="margin-top:0.5rem; width:100%;">Sauvegarder</button>
+                `;
+                contentDiv.classList.add('editing');
+            } else {
+                // Annuler (rechargera via le snapshot listener)
+                // On ne fait rien, le listener s'en chargera si on n'a pas sauvegardé, 
+                // ou on peut forcer un re-render si on avait les données locales.
+                // Ici le plus simple est d'attendre ou de laisser tel quel.
+            }
+        };
+
+        window.saveEdit = async (id) => {
+            const contentDiv = document.getElementById(`content-${id}`);
+            const qInput = contentDiv.querySelector('.edit-q').value;
+            const aInput = contentDiv.querySelector('.edit-a').value;
+
+            try {
+                await db.collection("questions").doc(id).update({
+                    question: qInput,
+                    answer: aInput
+                });
+                // Le listener mettra à jour l'UI
+            } catch (error) {
+                console.error("Erreur update:", error);
+                alert("Erreur lors de la modification.");
+            }
+        };
+
+        // --- Suppression Instantanée ---
+        window.deleteQuestion = async (id, imageUrl) => {
+            // PLUS DE CONFIRMATION
+            try {
+                // Optimistic UI removal could be done here, but Firestore is fast enough usually.
+                document.getElementById(`item-${id}`).style.opacity = '0.5';
+
+                await db.collection("questions").doc(id).delete();
+
+                // Nettoyage image si c'était une image Firebase Storage (pas Pixabay)
+                if (imageUrl && imageUrl.includes('firebasestorage')) {
+                    try {
+                        const imageRef = storage.refFromURL(imageUrl);
+                        await imageRef.delete();
+                    } catch (e) { console.log("Info: Image déjà supprimée ou externe"); }
+                }
+            } catch (error) {
+                console.error("Erreur suppression:", error);
+                alert("Erreur lors de la suppression.");
+                document.getElementById(`item-${id}`).style.opacity = '1';
+            }
+        };
+
+        // --- Prévisualisation (Inchangé) ---
         window.openPreview = (question, answer, imageUrl) => {
-            // On écrit dynamiquement dans l'iframe pour isoler le style
             const doc = previewFrame.contentWindow.document;
             doc.open();
             doc.write(`
@@ -313,10 +339,9 @@
                 <head>
                     <link rel="stylesheet" href="style.css">
                     <style>
-                        /* Force fullscreen look in iframe */
                         body { height: 100vh; overflow: hidden; }
                         #viewer-container { width: 100%; height: 100%; }
-                        .answer-text { opacity: 1 !important; } /* Montrer la réponse direct */
+                        .answer-text { opacity: 1 !important; }
                     </style>
                 </head>
                 <body>
@@ -338,27 +363,6 @@
             previewModal.style.display = 'none';
         };
 
-        // Supprimer une question (fonction globale pour être accessible via onclick)
-        window.deleteQuestion = async (id, imageUrl) => {
-            if (confirm("Voulez-vous vraiment supprimer cette question ?")) {
-                try {
-                    await db.collection("questions").doc(id).delete();
-
-                    if (imageUrl) {
-                        // Essayer de supprimer l'image associée
-                        try {
-                            const imageRef = storage.refFromURL(imageUrl);
-                            await imageRef.delete();
-                        } catch (e) {
-                            console.log("Erreur suppression image (peut-être déjà supprimée):", e);
-                        }
-                    }
-                } catch (error) {
-                    console.error("Erreur suppression:", error);
-                    alert("Erreur lors de la suppression.");
-                }
-            }
-        };
     </script>
 </body>
 
