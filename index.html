@@ -1,19 +1,21 @@
 <!DOCTYPE html>
 <html lang="fr">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mémorisation - Diaporama</title>
     <link rel="stylesheet" href="style.css">
-    
+
     <!-- Firebase SDKs -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    
+
     <script src="firebase-config.js"></script>
 </head>
+
 <body>
 
     <div id="viewer-container">
@@ -23,6 +25,7 @@
             <div id="answer-text" class="answer-text"></div>
         </div>
         <div id="progress-bar" class="progress-bar"></div>
+        <div id="countdown-timer"></div>
     </div>
 
     <script>
@@ -30,10 +33,11 @@
         const answerEl = document.getElementById('answer-text');
         const imageEl = document.getElementById('slide-image');
         const progressBar = document.getElementById('progress-bar');
-        
+        const timerEl = document.getElementById('countdown-timer');
+
         let questions = [];
         let currentIndex = 0;
-        let isShowingAnswer = false;
+        let timerInterval;
 
         // Configuration des durées (en ms)
         const QUESTION_DURATION = 10000; // 10 secondes
@@ -45,10 +49,8 @@
             querySnapshot.forEach((doc) => {
                 questions.push(doc.data());
             });
-            
+
             if (questions.length > 0) {
-                // Mélanger les questions si souhaité, ou garder l'ordre
-                // questions.sort(() => Math.random() - 0.5); 
                 startSlideshow();
             } else {
                 questionEl.textContent = "Aucune question disponible.";
@@ -66,14 +68,15 @@
             if (questions.length === 0) return;
 
             const currentItem = questions[currentIndex];
-            
+
             // Reset UI
-            isShowingAnswer = false;
+            clearInterval(timerInterval);
+            timerEl.style.display = 'none';
             answerEl.classList.remove('visible');
-            answerEl.textContent = currentItem.answer; // Prépare la réponse mais cachée
-            
+            answerEl.textContent = currentItem.answer;
+
             questionEl.textContent = currentItem.question;
-            
+
             if (currentItem.imageUrl) {
                 imageEl.src = currentItem.imageUrl;
                 imageEl.classList.remove('hidden');
@@ -88,14 +91,26 @@
         }
 
         function showAnswer() {
-            isShowingAnswer = true;
             answerEl.classList.add('visible');
 
-            // Animation barre de progression pour la réponse (optionnel, ou juste attendre)
-            // On peut changer la couleur de la barre pour la phase réponse si on veut
+            // Afficher et gérer le timer numérique
+            timerEl.style.display = 'block';
+            let timeLeft = ANSWER_DURATION / 1000;
+            timerEl.textContent = timeLeft;
+
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                if (timeLeft > 0) {
+                    timerEl.textContent = timeLeft;
+                } else {
+                    clearInterval(timerInterval);
+                }
+            }, 1000);
+
+            // Reset barre de progression
             progressBar.style.transition = 'none';
             progressBar.style.width = '0%';
-            
+
             setTimeout(() => {
                 // Passer à la suivante
                 currentIndex = (currentIndex + 1) % questions.length;
@@ -106,7 +121,7 @@
         function runProgressBar(duration, callback) {
             progressBar.style.transition = 'none';
             progressBar.style.width = '0%';
-            
+
             // Force reflow
             void progressBar.offsetWidth;
 
@@ -118,4 +133,5 @@
 
     </script>
 </body>
+
 </html>
