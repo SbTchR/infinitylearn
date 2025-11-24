@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administration - Mémorisation</title>
+    <link rel="stylesheet" href="style.css">
+
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+
+    <script src="firebase-config.js"></script>
+</head>
+
+<body>
+
+    <div class="admin-container">
+        <h1>Gestion des Questions</h1>
+
+        <div class="content-card" style="width: 100%; box-sizing: border-box; margin-bottom: 2rem;">
+            <h2>Ajouter une nouvelle fiche</h2>
+            <form id="add-form">
+                <div class="form-group">
+                    <label for="question">Question</label>
+                    <input type="text" id="question" required placeholder="Ex: Quelle est la capitale de l'Allemagne ?">
+                </div>
+
+                <div class="form-group">
+                    <label for="answer">Réponse</label>
+                    <input type="text" id="answer" required placeholder="Ex: Berlin">
+                </div>
+
+                <div class="form-group">
+                    <label for="image">Image (optionnel)</label>
+                    <input type="file" id="image" accept="image/*">
+                </div>
+
+                <button type="submit" id="submit-btn">Ajouter</button>
+            </form>
+        </div>
+
+        <div class="questions-list" id="questions-list">
+            <!-- Les questions s'afficheront ici -->
+            <p>Chargement des questions...</p>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('add-form');
+        const questionsList = document.getElementById('questions-list');
+        const submitBtn = document.getElementById('submit-btn');
+
+        // Écouter les mises à jour en temps réel
+        db.collection("questions").onSnapshot((snapshot) => {
+            questionsList.innerHTML = '';
+            snapshot.forEach((doc) => {
+                renderQuestion(doc.id, doc.data());
+            });
+            if (snapshot.empty) {
+                questionsList.innerHTML = '<p>Aucune question pour le moment.</p>';
+            }
+        });
+
+        // Ajouter une question
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            submitBtn.disabled = true;
+            submitBtn.textContent = "Ajout en cours...";
+
+            const question = document.getElementById('question').value;
+            const answer = document.getElementById('answer').value;
+            const imageFile = document.getElementById('image').files[0];
+
+            let imageUrl = null;
+
+            try {
+                if (imageFile) {
+                    const storageRef = storage.ref('images/' + new Date().getTime() + '_' + imageFile.name);
+                    await storageRef.put(imageFile);
+                    imageUrl = await storageRef.getDownloadURL();
+                }
+
+                await db.collection("questions").add({
+                    question: question,
+                    answer: answer,
+                    imageUrl: imageUrl,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+
+                form.reset();
+                alert("Question ajoutée avec succès !");
+            } catch (error) {
+                console.error("Erreur lors de l'ajout:", error);
+                alert("Erreur: " + error.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "Ajouter";
+            }
+        });
+
+        // Afficher une question dans la liste
+        function renderQuestion(id, data) {
+            const div = document.createElement('div');
+            div.className = 'question-item';
+
+            let imageHtml = '';
+            if (data.imageUrl) {
+                imageHtml = `<img src="${data.imageUrl}" alt="Image question">`;
+            }
+
+            div.innerHTML = `
+                ${imageHtml}
+                <div class="item-content">
+                    <strong>Q: ${data.question}</strong><br>
+                    <span style="color: var(--primary-color)">R: ${data.answer}</span>
+                </div>
+                <button class="delete-btn" onclick="deleteQuestion('${id}', '${data.imageUrl || ''}')">Supprimer</button>
+            `;
+            questionsList.appendChild(div);
+        }
+
+        // Supprimer une question (fonction globale pour être accessible via onclick)
+        window.deleteQuestion = async (id, imageUrl) => {
+            if (confirm("Voulez-vous vraiment supprimer cette question ?")) {
+                try {
+                    await db.collection("questions").doc(id).delete();
+
+                    if (imageUrl) {
+                        // Essayer de supprimer l'image associée
+                        try {
+                            const imageRef = storage.refFromURL(imageUrl);
+                            await imageRef.delete();
+                        } catch (e) {
+                            console.log("Erreur suppression image (peut-être déjà supprimée):", e);
+                        }
+                    }
+                } catch (error) {
+                    console.error("Erreur suppression:", error);
+                    alert("Erreur lors de la suppression.");
+                }
+            }
+        };
+    </script>
+</body>
+
+</html>
