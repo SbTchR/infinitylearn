@@ -1,8 +1,12 @@
 :root {
     --primary-color: #3498db;
     --secondary-color: #2c3e50;
-    --background-color: #f4f6f7;
-    --text-color: #333;
+    --background-color: #ffffff;
+    /* V2: Fond blanc */
+    --text-color: #000000;
+    /* V2: Texte noir */
+    --answer-color: #00008B;
+    /* V2: Bleu foncé contrasté */
     --card-bg: #ffffff;
     --timer-color: #e74c3c;
 }
@@ -16,6 +20,8 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    /* V2: Pas de scroll */
 }
 
 /* --- Viewer Styles (index.html) --- */
@@ -26,37 +32,43 @@ body {
     justify-content: center;
     align-items: center;
     text-align: center;
-    padding: 2rem;
+    padding: 0;
+    /* V2: Plein écran */
     position: relative;
-    overflow: hidden;
+    width: 100%;
+    height: 100%;
 }
 
 .content-card {
-    background: var(--card-bg);
-    padding: 3rem;
-    border-radius: 15px;
-    box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-    max-width: 90%;
-    width: 800px;
-    min-height: 400px;
+    background: transparent;
+    /* V2: Plus de carte visible, fond uni */
+    padding: 2rem;
+    box-shadow: none;
+    /* V2: Plus d'ombre */
+    width: 100%;
+    height: 100%;
     display: flex;
     flex-direction: column;
     justify-content: center;
     align-items: center;
-    transition: all 0.3s ease;
+    box-sizing: border-box;
 }
 
 .question-text {
-    font-size: 3rem;
+    font-size: 5vw;
+    /* V2: Taille responsive très grande */
     font-weight: bold;
-    margin-bottom: 2rem;
-    color: var(--secondary-color);
+    margin-bottom: 3rem;
+    color: var(--text-color);
+    line-height: 1.2;
 }
 
 .answer-text {
-    font-size: 2.5rem;
-    color: var(--primary-color);
-    margin-top: 1rem;
+    font-size: 4vw;
+    /* V2: Taille responsive grande */
+    color: var(--answer-color);
+    font-weight: bold;
+    margin-top: 2rem;
     opacity: 0;
     transition: opacity 0.5s ease-in-out;
 }
@@ -66,21 +78,38 @@ body {
 }
 
 .slide-image {
-    max-width: 100%;
-    max-height: 300px;
+    max-width: 80%;
+    max-height: 40vh;
     margin-bottom: 2rem;
     border-radius: 8px;
     object-fit: contain;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
 }
 
 .progress-bar {
     position: absolute;
     bottom: 0;
     left: 0;
-    height: 10px;
+    height: 20px;
+    /* V2: Barre plus épaisse */
     background-color: var(--timer-color);
     width: 0%;
     transition: width linear;
+}
+
+/* V2: Compte à rebours numérique */
+#countdown-timer {
+    position: absolute;
+    bottom: 30px;
+    right: 30px;
+    font-size: 3rem;
+    font-weight: bold;
+    color: var(--timer-color);
+    background: rgba(255, 255, 255, 0.9);
+    padding: 10px 20px;
+    border-radius: 10px;
+    display: none;
+    /* Caché par défaut */
 }
 
 /* --- Admin Styles (admin.html) --- */
@@ -88,12 +117,20 @@ body {
     max-width: 800px;
     margin: 2rem auto;
     padding: 2rem;
-    background: var(--card-bg);
+    background: #f4f6f7;
+    /* Fond gris léger pour l'admin pour différencier */
     border-radius: 10px;
-    box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+    height: auto;
+    /* Admin peut scroller */
+    overflow-y: auto;
 }
 
-h1, h2 {
+/* Reset body background for admin only if needed, but easier to keep global white 
+   and style container. */
+
+h1,
+h2 {
     color: var(--secondary-color);
 }
 
@@ -107,8 +144,8 @@ label {
     font-weight: 600;
 }
 
-input[type="text"], 
-textarea, 
+input[type="text"],
+textarea,
 input[type="file"] {
     width: 100%;
     padding: 0.8rem;
@@ -148,7 +185,7 @@ button.delete-btn:hover {
 }
 
 .question-item {
-    background: #f9f9f9;
+    background: #ffffff;
     padding: 1rem;
     margin-bottom: 1rem;
     border-radius: 5px;
@@ -156,6 +193,7 @@ button.delete-btn:hover {
     justify-content: space-between;
     align-items: center;
     border-left: 4px solid var(--primary-color);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
 }
 
 .question-item img {
