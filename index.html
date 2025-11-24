@@ -50,6 +50,16 @@
                 questions.push(doc.data());
             });
 
+            // Tri côté client pour être sûr (order, sinon createdAt)
+            questions.sort((a, b) => {
+                if (typeof a.order !== 'undefined' && typeof b.order !== 'undefined') {
+                    return a.order - b.order;
+                }
+                const timeA = a.createdAt ? a.createdAt.seconds : 0;
+                const timeB = b.createdAt ? b.createdAt.seconds : 0;
+                return timeB - timeA; // Fallback
+            });
+
             if (questions.length > 0) {
                 startSlideshow();
             } else {
@@ -130,6 +140,12 @@
 
             setTimeout(callback, duration);
         }
+
+        // Auto-refresh toutes les heures (3600000 ms) pour récupérer les nouvelles questions
+        setTimeout(() => {
+            console.log("Auto-refresh du diaporama...");
+            window.location.reload();
+        }, 3600000);
 
     </script>
 </body>

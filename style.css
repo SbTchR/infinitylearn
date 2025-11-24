@@ -213,6 +213,16 @@ button.save-btn:hover {
     border-top: 4px solid var(--primary-color);
     box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
     position: relative;
+    cursor: grab;
+    /* V3: Indique que c'est déplaçable */
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.question-item.dragging {
+    opacity: 0.5;
+    background: #eef2f3;
+    border: 2px dashed var(--primary-color);
+    transform: scale(0.98);
 }
 
 .question-item .img-placeholder {
