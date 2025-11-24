@@ -53,7 +53,11 @@
         <div id="pixabay-content">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
                 <h3 style="margin: 0;">Choisir une image</h3>
-                <button onclick="closePixabayModal()" style="background: #e74c3c; padding: 0.5rem;">Fermer</button>
+                <div style="display: flex; gap: 10px;">
+                    <button onclick="removeImage()"
+                        style="background: #f39c12; padding: 0.5rem; font-size: 0.9rem;">Supprimer l'image</button>
+                    <button onclick="closePixabayModal()" style="background: #e74c3c; padding: 0.5rem;">Fermer</button>
+                </div>
             </div>
             <div style="display: flex; gap: 10px; margin-bottom: 1rem;">
                 <input type="text" id="pixabay-search-input" placeholder="Recherche..." style="flex: 1;">
@@ -217,6 +221,13 @@
             searchPixabay(pixabaySearchInput.value);
         });
 
+        // Support touche Entrée
+        pixabaySearchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchPixabay(pixabaySearchInput.value);
+            }
+        });
+
         async function searchPixabay(query) {
             if (!query) return;
             pixabayGrid.innerHTML = '<p style="text-align:center; width:100%;">Chargement...</p>';
@@ -227,7 +238,8 @@
                     return;
                 }
 
-                const response = await fetch(`https://pixabay.com/api/?key=${pixabayApiKey}&q=${encodeURIComponent(query)}&lang=fr&image_type=photo&per_page=20`);
+                // Augmentation du nombre de résultats à 100
+                const response = await fetch(`https://pixabay.com/api/?key=${pixabayApiKey}&q=${encodeURIComponent(query)}&lang=fr&image_type=photo&per_page=100`);
                 const data = await response.json();
 
                 pixabayGrid.innerHTML = '';
@@ -253,15 +265,17 @@
                 return;
             }
 
+            const docIdToUpdate = currentEditingDocId; // Sauvegarder l'ID avant de fermer la modale
+
             // Feedback visuel
-            const placeholder = document.querySelector(`#item-${currentEditingDocId} .img-placeholder`);
+            const placeholder = document.querySelector(`#item-${docIdToUpdate} .img-placeholder`);
             if (placeholder) placeholder.innerHTML = '<span>Sauvegarde...</span>';
 
-            closePixabayModal();
+            closePixabayModal(); // Cela met currentEditingDocId à null
 
             try {
-                // Utilisation de set avec merge:true pour être plus permissif si le doc existe
-                await db.collection("questions").doc(currentEditingDocId).set({
+                // Utilisation de l'ID sauvegardé localement
+                await db.collection("questions").doc(docIdToUpdate).set({
                     imageUrl: url
                 }, { merge: true });
 
@@ -271,6 +285,25 @@
                 // Restaurer l'état visuel si possible (le snapshot le fera de toute façon)
             }
         }
+
+        // Nouvelle fonction pour supprimer l'image
+        window.removeImage = async () => {
+            if (!currentEditingDocId) return;
+
+            if (!confirm("Voulez-vous vraiment retirer l'image de cette question ?")) return;
+
+            const docIdToUpdate = currentEditingDocId;
+            closePixabayModal();
+
+            try {
+                await db.collection("questions").doc(docIdToUpdate).update({
+                    imageUrl: null // Ou firebase.firestore.FieldValue.delete() si on veut supprimer le champ
+                });
+            } catch (error) {
+                console.error("Erreur suppression image:", error);
+                alert("Erreur lors de la suppression de l'image: " + error.message);
+            }
+        };
 
         // --- Gestion Édition ---
 
