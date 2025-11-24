@@ -20,8 +20,7 @@ body {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow: hidden;
-    /* V2: Pas de scroll */
+    /* overflow: hidden;  <-- Supprimé pour permettre le scroll sur Admin */
 }
 
 /* --- Viewer Styles (index.html) --- */
@@ -37,6 +36,8 @@ body {
     position: relative;
     width: 100%;
     height: 100%;
+    overflow: hidden;
+    /* <-- Ajouté ici pour le Viewer uniquement */
 }
 
 .content-card {

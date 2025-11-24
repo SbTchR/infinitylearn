@@ -10,6 +10,9 @@ const firebaseConfig = {
     measurementId: "G-TMRWFQZ653"
 };
 
+// Clé API Pixabay
+const pixabayApiKey = "39838048-edeef51c8fd008798b4ecbe51";
+
 // Initialisation de Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
