@@ -30,12 +30,12 @@
         <div class="content-card"
             style="width: 100%; box-sizing: border-box; margin-bottom: 2rem; border-top: 4px solid var(--secondary-color);">
             <h2>Import en masse (Excel)</h2>
-            <p style="font-size: 0.9rem; color: #666;">Copiez vos colonnes Excel (Question [TAB] Réponse) et collez-les
-                ici.</p>
+            <p style="font-size: 0.9rem; color: #666;">Copiez vos colonnes Excel (Question [TAB] Réponse) ou utilisez le
+                format "Question ; Réponse".</p>
             <form id="import-form">
                 <div class="form-group">
                     <textarea id="import-text" rows="3"
-                        placeholder="Question 1	Réponse 1&#10;Question 2	Réponse 2"></textarea>
+                        placeholder="Question 1	Réponse 1&#10;Question 2 ; Réponse 2"></textarea>
                 </div>
                 <button type="submit" id="import-btn" style="background-color: var(--secondary-color);">Importer la
                     liste</button>
@@ -102,7 +102,7 @@
             }
         });
 
-        // Import en masse
+        // Import en masse (et Ajout Manuel via ;)
         importForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const text = document.getElementById('import-text').value;
@@ -116,12 +116,21 @@
 
             try {
                 const batch = db.batch();
+                let batchCount = 0;
 
                 for (let line of lines) {
-                    const parts = line.split('\t');
+                    if (!line.trim()) continue;
+
+                    // Essayer Tabulation OU Point-virgule
+                    let parts = line.split('\t');
+                    if (parts.length < 2) {
+                        parts = line.split(';');
+                    }
+
                     if (parts.length >= 2) {
                         const q = parts[0].trim();
-                        const a = parts[1].trim();
+                        // Rejoindre le reste au cas où il y aurait d'autres séparateurs dans la réponse
+                        const a = parts.slice(1).join(' ').trim();
 
                         if (q && a) {
                             const docRef = db.collection("questions").doc();
@@ -132,18 +141,22 @@
                                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
                             });
                             count++;
+                            batchCount++;
                         }
                     }
                 }
 
-                await batch.commit();
-                document.getElementById('import-text').value = '';
-                // Pas d'alerte bloquante, juste un log ou petit toast idéalement, mais ici on reste simple
-                console.log(`${count} questions importées.`);
+                if (batchCount > 0) {
+                    await batch.commit();
+                    document.getElementById('import-text').value = '';
+                    console.log(`${count} questions importées.`);
+                } else {
+                    alert("Format incorrect. Utilisez 'Question [TAB] Réponse' ou 'Question ; Réponse'");
+                }
 
             } catch (error) {
                 console.error("Erreur import:", error);
-                alert("Erreur lors de l'importation.");
+                alert("Erreur lors de l'importation: " + error.message);
             } finally {
                 importBtn.disabled = false;
                 importBtn.textContent = "Importer la liste";
@@ -162,9 +175,9 @@
                 imgContent = `<img src="${data.imageUrl}" alt="Image">`;
             }
 
-            // Echapper pour JS
-            const safeQuestion = data.question.replace(/'/g, "\\'").replace(/"/g, '&quot;');
-            const safeAnswer = data.answer.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            // Echapper pour JS (plus robuste)
+            const safeQuestion = (data.question || "").replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ');
+            const safeAnswer = (data.answer || "").replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;').replace(/\n/g, ' ');
             const safeImage = data.imageUrl ? data.imageUrl : '';
 
             div.innerHTML = `
@@ -191,8 +204,8 @@
         window.openPixabayFor = (id, initialQuery) => {
             currentEditingDocId = id;
             pixabayModal.style.display = 'flex';
-            pixabaySearchInput.value = initialQuery; // Pré-remplir avec la question
-            searchPixabay(initialQuery); // Lancer la recherche auto
+            pixabaySearchInput.value = initialQuery;
+            searchPixabay(initialQuery);
         };
 
         window.closePixabayModal = () => {
@@ -208,11 +221,7 @@
             if (!query) return;
             pixabayGrid.innerHTML = '<p style="text-align:center; width:100%;">Chargement...</p>';
 
-            // Nettoyage basique de la requête (enlever les ? et mots trop courts si phrase longue)
-            // Pour l'instant on envoie brut, Pixabay gère assez bien.
-
             try {
-                // Utilisation de la clé définie dans firebase-config.js
                 if (typeof pixabayApiKey === 'undefined' || pixabayApiKey === "VOTRE_CLE_PIXABAY") {
                     pixabayGrid.innerHTML = '<p style="color:red;">Clé API Pixabay manquante dans firebase-config.js</p>';
                     return;
@@ -222,10 +231,10 @@
                 const data = await response.json();
 
                 pixabayGrid.innerHTML = '';
-                if (data.hits.length > 0) {
+                if (data.hits && data.hits.length > 0) {
                     data.hits.forEach(hit => {
                         const img = document.createElement('img');
-                        img.src = hit.webformatURL; // On affiche directement une bonne qualité
+                        img.src = hit.webformatURL;
                         img.onclick = () => selectImage(hit.webformatURL);
                         pixabayGrid.appendChild(img);
                     });
@@ -239,7 +248,10 @@
         }
 
         async function selectImage(url) {
-            if (!currentEditingDocId) return;
+            if (!currentEditingDocId) {
+                alert("Erreur: Aucune question sélectionnée.");
+                return;
+            }
 
             // Feedback visuel
             const placeholder = document.querySelector(`#item-${currentEditingDocId} .img-placeholder`);
@@ -248,19 +260,15 @@
             closePixabayModal();
 
             try {
-                // On met à jour directement l'URL dans Firestore.
-                // Note: Idéalement on téléchargerait l'image pour la mettre dans Storage, 
-                // mais pour la V3 rapide et fluide, on utilise l'URL Pixabay (Hotlinking autorisé par Pixabay).
-                // Si l'utilisateur veut vraiment uploader, on pourrait remettre la logique de fetch blob -> storage.
-                // Pour la rapidité demandée ("cliquer sur une image pour la choisir"), le lien direct est le plus performant.
-
-                await db.collection("questions").doc(currentEditingDocId).update({
+                // Utilisation de set avec merge:true pour être plus permissif si le doc existe
+                await db.collection("questions").doc(currentEditingDocId).set({
                     imageUrl: url
-                });
+                }, { merge: true });
 
             } catch (error) {
                 console.error("Erreur update image:", error);
-                alert("Erreur lors de la sauvegarde de l'image.");
+                alert("Erreur lors de la sauvegarde de l'image: " + error.message);
+                // Restaurer l'état visuel si possible (le snapshot le fera de toute façon)
             }
         }
 
@@ -271,21 +279,15 @@
             const isEditing = contentDiv.classList.contains('editing');
 
             if (!isEditing) {
-                // Passer en mode édition
                 const qVal = contentDiv.querySelector('.q-val').textContent;
                 const aVal = contentDiv.querySelector('.a-val').textContent;
 
                 contentDiv.innerHTML = `
                     <input type="text" class="edit-q" value="${qVal.replace(/"/g, '&quot;')}" style="margin-bottom:0.5rem;">
-                    <input type="text" class="edit-a" value="${aVal.replace(/"/g, '&quot;')}">
+                    <input type="text" class="edit-a" value="${aVal.replace(/"/g, '&quot;')}" style="margin-bottom:0.5rem;">
                     <button class="save-btn" onclick="saveEdit('${id}')" style="margin-top:0.5rem; width:100%;">Sauvegarder</button>
                 `;
                 contentDiv.classList.add('editing');
-            } else {
-                // Annuler (rechargera via le snapshot listener)
-                // On ne fait rien, le listener s'en chargera si on n'a pas sauvegardé, 
-                // ou on peut forcer un re-render si on avait les données locales.
-                // Ici le plus simple est d'attendre ou de laisser tel quel.
             }
         };
 
@@ -302,20 +304,16 @@
                 // Le listener mettra à jour l'UI
             } catch (error) {
                 console.error("Erreur update:", error);
-                alert("Erreur lors de la modification.");
+                alert("Erreur lors de la modification: " + error.message);
             }
         };
 
         // --- Suppression Instantanée ---
         window.deleteQuestion = async (id, imageUrl) => {
-            // PLUS DE CONFIRMATION
             try {
-                // Optimistic UI removal could be done here, but Firestore is fast enough usually.
                 document.getElementById(`item-${id}`).style.opacity = '0.5';
-
                 await db.collection("questions").doc(id).delete();
 
-                // Nettoyage image si c'était une image Firebase Storage (pas Pixabay)
                 if (imageUrl && imageUrl.includes('firebasestorage')) {
                     try {
                         const imageRef = storage.refFromURL(imageUrl);
@@ -324,7 +322,7 @@
                 }
             } catch (error) {
                 console.error("Erreur suppression:", error);
-                alert("Erreur lors de la suppression.");
+                alert("Erreur lors de la suppression: " + error.message);
                 document.getElementById(`item-${id}`).style.opacity = '1';
             }
         };
