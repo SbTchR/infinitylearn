@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Administration - Mémorisation V3</title>
+    <title>Administration - Mémorisation</title>
     <link rel="stylesheet" href="style.css">
 
     <!-- Firebase SDKs -->
@@ -19,14 +19,42 @@
 <body>
 
     <div class="admin-container">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
-            <h1>Gestion des Questions</h1>
-            <a href="index.html" target="_blank"
-                style="text-decoration: none; background: var(--secondary-color); color: white; padding: 0.5rem 1rem; border-radius: 5px;">Voir
-                le Diaporama</a>
+        <header style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem;">
+            <h1>Administration</h1>
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <select id="list-selector" style="padding: 0.5rem; font-size: 1rem;">
+                    <option value="" disabled selected>Chargement des listes...</option>
+                </select>
+                <button onclick="createNewList()" style="background-color: var(--secondary-color);">+ Nouvelle
+                    Liste</button>
+                <button onclick="deleteCurrentList()" style="background-color: #e74c3c;">Supprimer Liste</button>
+            </div>
+        </header>
+
+        <!-- Panneau de Configuration -->
+        <div class="content-card"
+            style="margin-bottom: 2rem; background: #f8f9fa; border-left: 5px solid var(--secondary-color);">
+            <h3>Configuration de la Liste</h3>
+            <div style="display: flex; gap: 20px; align-items: center; flex-wrap: wrap;">
+                <div style="flex: 1;">
+                    <label style="font-weight: bold;">État :</label>
+                    <span id="active-status" style="margin-left: 10px; color: #666;">...</span>
+                    <button id="activate-btn" onclick="activateCurrentList()"
+                        style="margin-left: 10px; font-size: 0.8rem;">Diffuser cette liste</button>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <label>Temps Question (s):</label>
+                    <input type="number" id="config-q-time" value="10" style="width: 60px; padding: 5px;">
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center;">
+                    <label>Temps Réponse (s):</label>
+                    <input type="number" id="config-a-time" value="5" style="width: 60px; padding: 5px;">
+                </div>
+                <button onclick="saveConfig()" style="background-color: var(--primary-color);">Appliquer les
+                    paramètres</button>
+            </div>
         </div>
 
-        <!-- Section Import Excel (Seul moyen d'ajout) -->
         <div class="content-card"
             style="width: 100%; box-sizing: border-box; margin-bottom: 2rem; border-top: 4px solid var(--secondary-color);">
             <h2>Import en masse (Excel)</h2>
@@ -42,9 +70,8 @@
             </form>
         </div>
 
-        <div class="questions-list" id="questions-list">
-            <!-- Les questions s'afficheront ici en grille -->
-            <p>Chargement des questions...</p>
+        <div id="questions-list" class="questions-grid">
+            <!-- Les questions seront injectées ici par JS -->
         </div>
     </div>
 
@@ -79,6 +106,12 @@
     </div>
 
     <script>
+        const listSelector = document.getElementById('list-selector');
+        const activeStatus = document.getElementById('active-status');
+        const activateBtn = document.getElementById('activate-btn');
+        const configQTime = document.getElementById('config-q-time');
+        const configATime = document.getElementById('config-a-time');
+
         const importForm = document.getElementById('import-form');
         const questionsList = document.getElementById('questions-list');
         const importBtn = document.getElementById('import-btn');
@@ -90,48 +123,205 @@
         const pixabaySearchBtn = document.getElementById('pixabay-search-btn');
 
         let currentEditingDocId = null;
-        let allQuestions = []; // Stockage local pour le tri
+        let allQuestions = [];
+        let currentListId = null;
+        let globalConfig = { activeListId: null, questionDuration: 10, answerDuration: 5 };
 
         // Preview Elements
         const previewModal = document.getElementById('preview-modal');
         const previewFrame = document.getElementById('preview-frame');
 
-        // Écouter les mises à jour en temps réel (SANS orderBy côté serveur pour gérer la migration)
-        db.collection("questions").onSnapshot((snapshot) => {
-            allQuestions = [];
-            let needsMigration = false;
+        // --- Initialisation & Migration ---
+        async function init() {
+            // 1. Charger la config globale
+            db.collection("config").doc("global").onSnapshot(async (doc) => {
+                if (doc.exists) {
+                    globalConfig = doc.data();
+                    updateConfigUI();
+                } else {
+                    // Créer config par défaut
+                    await db.collection("config").doc("global").set(globalConfig);
+                }
+            });
 
-            snapshot.forEach((doc) => {
+            // 2. Charger les listes
+            db.collection("lists").orderBy("createdAt").onSnapshot(async (snapshot) => {
+                listSelector.innerHTML = '';
+                let lists = [];
+                snapshot.forEach(doc => lists.push({ id: doc.id, ...doc.data() }));
+
+                if (lists.length === 0) {
+                    // Migration: Créer liste par défaut
+                    const defaultListRef = await db.collection("lists").add({
+                        name: "Liste Principale",
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    currentListId = defaultListRef.id;
+                    // Migrer les questions existantes
+                    migrateQuestions(currentListId);
+                } else {
+                    // Remplir le selecteur
+                    lists.forEach(list => {
+                        const option = document.createElement('option');
+                        option.value = list.id;
+                        option.textContent = list.name;
+                        listSelector.appendChild(option);
+                    });
+
+                    // Restaurer la sélection ou prendre la première
+                    if (!currentListId || !lists.find(l => l.id === currentListId)) {
+                        currentListId = lists[0].id;
+                    }
+                    listSelector.value = currentListId;
+                }
+
+                // Charger les questions de la liste courante
+                loadQuestionsForList(currentListId);
+                updateConfigUI();
+            });
+        }
+
+        async function migrateQuestions(targetListId) {
+            console.log("Migration des questions vers la liste:", targetListId);
+            const snapshot = await db.collection("questions").where("listId", "==", null).get(); // Pas possible de filtrer sur undefined facilement, on prend tout et on check
+            // En fait, Firestore ne filtre pas sur champs manquants facilement. On prend tout.
+            // Optimisation: On suppose que si on vient de créer la liste par défaut, c'est qu'on migre.
+
+            const allSnapshot = await db.collection("questions").get();
+            const batch = db.batch();
+            let count = 0;
+
+            allSnapshot.forEach(doc => {
                 const data = doc.data();
-                allQuestions.push({ id: doc.id, ...data });
-                if (typeof data.order === 'undefined') {
-                    needsMigration = true;
+                if (!data.listId) {
+                    batch.update(doc.ref, { listId: targetListId });
+                    count++;
                 }
             });
 
-            // Tri : Par 'order' si possible, sinon par 'createdAt' (fallback)
-            allQuestions.sort((a, b) => {
-                if (typeof a.order !== 'undefined' && typeof b.order !== 'undefined') {
-                    return a.order - b.order;
-                }
-                // Fallback pour ceux qui n'ont pas d'ordre (les nouveaux ou avant migration)
-                const timeA = a.createdAt ? a.createdAt.seconds : 0;
-                const timeB = b.createdAt ? b.createdAt.seconds : 0;
-                return timeB - timeA; // Plus récent en premier par défaut si pas d'ordre
-            });
-
-            renderList();
-
-            if (needsMigration) {
-                console.log("Migration des ordres nécessaire...");
-                saveNewOrder(); // Assigne un ordre à tout le monde
+            if (count > 0) {
+                await batch.commit();
+                console.log(`${count} questions migrées.`);
             }
+        }
+
+        listSelector.addEventListener('change', (e) => {
+            currentListId = e.target.value;
+            loadQuestionsForList(currentListId);
+            updateConfigUI();
         });
+
+        function updateConfigUI() {
+            if (!currentListId) return;
+
+            // Timer inputs
+            configQTime.value = globalConfig.questionDuration || 10;
+            configATime.value = globalConfig.answerDuration || 5;
+
+            // Active status
+            if (globalConfig.activeListId === currentListId) {
+                activeStatus.textContent = "DIFFUSÉE EN DIRECT";
+                activeStatus.style.color = "green";
+                activeStatus.style.fontWeight = "bold";
+                activateBtn.style.display = "none";
+            } else {
+                activeStatus.textContent = "Non diffusée";
+                activeStatus.style.color = "#666";
+                activeStatus.style.fontWeight = "normal";
+                activateBtn.style.display = "inline-block";
+            }
+        }
+
+        // --- Actions Listes & Config ---
+
+        window.createNewList = async () => {
+            const name = prompt("Nom de la nouvelle liste (ex: 6ème B) :");
+            if (name) {
+                const docRef = await db.collection("lists").add({
+                    name: name,
+                    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                });
+                currentListId = docRef.id; // Switch auto
+                // Le snapshot listener mettra à jour l'UI
+            }
+        };
+
+        window.deleteCurrentList = async () => {
+            if (!confirm("Voulez-vous vraiment supprimer cette liste et toutes ses questions ?")) return;
+
+            // Supprimer les questions
+            const qSnapshot = await db.collection("questions").where("listId", "==", currentListId).get();
+            const batch = db.batch();
+            qSnapshot.forEach(doc => batch.delete(doc.ref));
+            await batch.commit();
+
+            // Supprimer la liste
+            await db.collection("lists").doc(currentListId).delete();
+            // Le listener gérera le reste
+        };
+
+        window.activateCurrentList = async () => {
+            await db.collection("config").doc("global").update({
+                activeListId: currentListId
+            });
+        };
+
+        window.saveConfig = async () => {
+            const qTime = parseInt(configQTime.value) || 10;
+            const aTime = parseInt(configATime.value) || 5;
+
+            await db.collection("config").doc("global").update({
+                questionDuration: qTime,
+                answerDuration: aTime
+            });
+            alert("Paramètres sauvegardés !");
+        };
+
+
+        // --- Gestion Questions (Adapté Multi-List) ---
+
+        let unsubscribeQuestions = null;
+
+        function loadQuestionsForList(listId) {
+            if (unsubscribeQuestions) unsubscribeQuestions();
+
+            unsubscribeQuestions = db.collection("questions")
+                .where("listId", "==", listId)
+                .onSnapshot((snapshot) => {
+                    allQuestions = [];
+                    let needsOrderMigration = false;
+
+                    snapshot.forEach((doc) => {
+                        const data = doc.data();
+                        allQuestions.push({ id: doc.id, ...data });
+                        if (typeof data.order === 'undefined') {
+                            needsOrderMigration = true;
+                        }
+                    });
+
+                    // Tri
+                    allQuestions.sort((a, b) => {
+                        if (typeof a.order !== 'undefined' && typeof b.order !== 'undefined') {
+                            return a.order - b.order;
+                        }
+                        const timeA = a.createdAt ? a.createdAt.seconds : 0;
+                        const timeB = b.createdAt ? b.createdAt.seconds : 0;
+                        return timeB - timeA;
+                    });
+
+                    renderList();
+
+                    if (needsOrderMigration) {
+                        saveNewOrder();
+                    }
+                });
+        }
+
 
         function renderList() {
             questionsList.innerHTML = '';
             if (allQuestions.length === 0) {
-                questionsList.innerHTML = '<p>Aucune question pour le moment.</p>';
+                questionsList.innerHTML = '<p>Aucune question dans cette liste.</p>';
                 return;
             }
 
@@ -143,6 +333,11 @@
         // Import en masse
         importForm.addEventListener('submit', async (e) => {
             e.preventDefault();
+            if (!currentListId) {
+                alert("Veuillez sélectionner une liste d'abord.");
+                return;
+            }
+
             const text = document.getElementById('import-text').value;
             if (!text.trim()) return;
 
@@ -156,7 +351,6 @@
                 const batch = db.batch();
                 let batchCount = 0;
 
-                // On détermine le prochain 'order' disponible
                 const maxOrder = allQuestions.length > 0 ? Math.max(...allQuestions.map(q => q.order || 0)) : -1;
                 let currentOrder = maxOrder + 1;
 
@@ -178,7 +372,8 @@
                                 question: q,
                                 answer: a,
                                 imageUrl: null,
-                                order: currentOrder++, // Ajout de l'ordre
+                                order: currentOrder++,
+                                listId: currentListId, // Ajout du listId
                                 createdAt: firebase.firestore.FieldValue.serverTimestamp()
                             });
                             count++;
@@ -271,8 +466,6 @@
             }
 
             if (dragSrcEl !== this) {
-                // Réorganisation visuelle (swap simple ou réinsertion)
-                // Ici on va plutôt réordonner le tableau allQuestions et re-render
                 const srcId = dragSrcEl.dataset.id;
                 const destId = this.dataset.id;
 
@@ -280,12 +473,11 @@
                 const destIndex = allQuestions.findIndex(q => q.id === destId);
 
                 if (srcIndex > -1 && destIndex > -1) {
-                    // Déplacer l'élément dans le tableau
                     const [movedItem] = allQuestions.splice(srcIndex, 1);
                     allQuestions.splice(destIndex, 0, movedItem);
 
-                    renderList(); // Mettre à jour l'UI immédiatement
-                    saveNewOrder(); // Sauvegarder le nouvel ordre dans Firebase
+                    renderList();
+                    saveNewOrder();
                 }
             }
             return false;
@@ -293,13 +485,11 @@
 
         function handleDragEnd(e) {
             this.classList.remove('dragging');
-            // Nettoyer les classes si besoin
         }
 
         async function saveNewOrder() {
             const batch = db.batch();
             allQuestions.forEach((q, index) => {
-                // On ne met à jour que si l'ordre a changé pour économiser des écritures
                 if (q.order !== index) {
                     const ref = db.collection("questions").doc(q.id);
                     batch.update(ref, { order: index });
@@ -462,7 +652,7 @@
             }
         };
 
-        // --- Prévisualisation (Inchangé) ---
+        // --- Prévisualisation ---
         window.openPreview = (question, answer, imageUrl) => {
             const doc = previewFrame.contentWindow.document;
             doc.open();
@@ -495,6 +685,9 @@
         window.closePreview = () => {
             previewModal.style.display = 'none';
         };
+
+        // Lancer l'app
+        init();
 
     </script>
 </body>

@@ -39,38 +39,65 @@
         let currentIndex = 0;
         let timerInterval;
 
-        // Configuration des durées (en ms)
-        const QUESTION_DURATION = 10000; // 10 secondes
-        const ANSWER_DURATION = 5000;    // 5 secondes
+        // Configuration par défaut (sera écrasée par Firebase)
+        let QUESTION_DURATION = 10000;
+        let ANSWER_DURATION = 5000;
+        let activeListId = null;
 
-        // Chargement des données
-        db.collection("questions").get().then((querySnapshot) => {
-            questions = [];
-            querySnapshot.forEach((doc) => {
-                questions.push(doc.data());
-            });
+        // 1. Écouter la configuration globale
+        db.collection("config").doc("global").onSnapshot((doc) => {
+            if (doc.exists) {
+                const config = doc.data();
 
-            // Tri côté client pour être sûr (order, sinon createdAt)
-            questions.sort((a, b) => {
-                if (typeof a.order !== 'undefined' && typeof b.order !== 'undefined') {
-                    return a.order - b.order;
+                // Mise à jour des timers
+                if (config.questionDuration) QUESTION_DURATION = config.questionDuration * 1000;
+                if (config.answerDuration) ANSWER_DURATION = config.answerDuration * 1000;
+
+                // Changement de liste active
+                if (config.activeListId && config.activeListId !== activeListId) {
+                    activeListId = config.activeListId;
+                    console.log("Nouvelle liste active détectée:", activeListId);
+                    loadQuestions(activeListId);
                 }
-                const timeA = a.createdAt ? a.createdAt.seconds : 0;
-                const timeB = b.createdAt ? b.createdAt.seconds : 0;
-                return timeB - timeA; // Fallback
-            });
-
-            if (questions.length > 0) {
-                startSlideshow();
-            } else {
-                questionEl.textContent = "Aucune question disponible.";
             }
-        }).catch((error) => {
-            console.error("Erreur de chargement:", error);
-            questionEl.textContent = "Erreur de chargement des données. Vérifiez la console.";
         });
 
+        function loadQuestions(listId) {
+            console.log("Chargement des questions pour la liste:", listId);
+            db.collection("questions").where("listId", "==", listId).get().then((querySnapshot) => {
+                questions = [];
+                querySnapshot.forEach((doc) => {
+                    questions.push(doc.data());
+                });
+
+                // Tri côté client (order, sinon createdAt)
+                questions.sort((a, b) => {
+                    if (typeof a.order !== 'undefined' && typeof b.order !== 'undefined') {
+                        return a.order - b.order;
+                    }
+                    const timeA = a.createdAt ? a.createdAt.seconds : 0;
+                    const timeB = b.createdAt ? b.createdAt.seconds : 0;
+                    return timeB - timeA;
+                });
+
+                if (questions.length > 0) {
+                    currentIndex = 0; // Reset au début
+                    startSlideshow();
+                } else {
+                    questionEl.textContent = "Aucune question dans cette liste.";
+                    answerEl.textContent = "";
+                    imageEl.classList.add('hidden');
+                }
+            }).catch((error) => {
+                console.error("Erreur de chargement:", error);
+                questionEl.textContent = "Erreur de chargement des données.";
+            });
+        }
+
         function startSlideshow() {
+            // Nettoyer l'existant si on redémarre
+            clearTimeout(window.slideTimeout);
+            clearInterval(timerInterval);
             showQuestion();
         }
 
@@ -82,7 +109,13 @@
             // Reset UI
             clearInterval(timerInterval);
             timerEl.style.display = 'none';
+
+            // Masquer la réponse INSTANTANÉMENT pour éviter le flash du nouveau texte
+            answerEl.style.transition = 'none';
             answerEl.classList.remove('visible');
+            answerEl.style.opacity = '0';
+
+            // Mise à jour du texte (invisible pour l'instant)
             answerEl.textContent = currentItem.answer;
 
             questionEl.textContent = currentItem.question;
@@ -101,11 +134,17 @@
         }
 
         function showAnswer() {
+            // Réactiver la transition pour le fade-in
+            answerEl.style.transition = 'opacity 0.5s ease-in-out';
+            // Force reflow pour que la transition soit prise en compte
+            void answerEl.offsetWidth;
+
             answerEl.classList.add('visible');
+            answerEl.style.opacity = '1';
 
             // Afficher et gérer le timer numérique
             timerEl.style.display = 'block';
-            let timeLeft = ANSWER_DURATION / 1000;
+            let timeLeft = Math.ceil(ANSWER_DURATION / 1000);
             timerEl.textContent = timeLeft;
 
             timerInterval = setInterval(() => {
@@ -121,7 +160,7 @@
             progressBar.style.transition = 'none';
             progressBar.style.width = '0%';
 
-            setTimeout(() => {
+            window.slideTimeout = setTimeout(() => {
                 // Passer à la suivante
                 currentIndex = (currentIndex + 1) % questions.length;
                 showQuestion();
@@ -138,7 +177,7 @@
             progressBar.style.transition = `width ${duration}ms linear`;
             progressBar.style.width = '100%';
 
-            setTimeout(callback, duration);
+            window.slideTimeout = setTimeout(callback, duration);
         }
 
         // Auto-refresh toutes les heures (3600000 ms) pour récupérer les nouvelles questions
